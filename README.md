@@ -4,10 +4,17 @@ This is a Python bot designed to automate certain tasks in the game Goodgame Emp
 
 ## Features
 
-* **Multi-Target Support**: Can manage up to 4 target locations in sequence
-* **Sequential Processing**: Spies on targets one after another, waiting for each spy report before proceeding
+### Game Modes
+* **Event Mode**: The standard mode with spy-attack-skip cycle for up to 4 targets
+* **Baron Mode**: Attack-only mode supporting unlimited targets with intelligent attack scheduling
+
+### Core Functionality
+* **Multi-Target Support**: Manage target locations based on selected mode (up to 4 in Event Mode, unlimited in Baron Mode)
+* **Target Selection Overlay**: Transparent overlay for selecting targets without moving the game view
+* **Sequential Processing**: Processes targets in an optimal sequence based on the selected mode
 * **Intelligent Timing**: Tracks and remembers timing values for each target
-* **Phased Operations**: Operates in phases - spy phase, attack phase, and skip phase
+* **Progress Tracking**: Visual progress bar shows completion status of operations
+* **Phased Operations**: Operates in different phases depending on the selected mode
 * **Image Recognition**: Uses OpenCV and PyAutoGUI to find game elements on screen
 * **OCR Integration**: Uses Tesseract OCR to read in-game timers and information
 * **Skip Management**: Navigates skip timers using available speed-ups
@@ -55,21 +62,28 @@ This is a Python bot designed to automate certain tasks in the game Goodgame Emp
    ```
 2. **Configure Tesseract (if needed):** If the bot doesn't automatically find Tesseract, you may need to ensure it's in your system's PATH.
 
-3. **Add Targets:**
+3. **Select Mode:**
+   * Choose between "Event Mode" or "Baron Mode" from the dropdown menu
+   * The start button will update to reflect your selection
+
+4. **Add Targets:**
    * Click "Add Target" button
-   * Click on a target location in the game window
-   * Repeat for up to 4 targets
+   * A transparent overlay will appear
+   * Click on target locations in the game window (green dots will mark your selections)
+   * Click "Done" when finished
+   * Event Mode: Maximum 4 targets
+   * Baron Mode: Unlimited targets
 
-4. **Start the Bot:**
-   * Click the "START LOOP" button
-   * The bot will process each target in sequence:
-     * Send spies to each target one by one, waiting for each spy report
-     * Attack all targets in sequence
-     * Process skips for all targets in sequence
+5. **Start the Bot:**
+   * Click the "START EVENT MODE" or "START BARON MODE" button
+   * The bot will process targets based on the selected mode
+   * Progress bar will show completion status
 
-5. **Stop the bot:** Press the `ESC` key at any time to stop the bot.
+6. **Stop the bot:** Press the `ESC` key at any time to stop the bot.
 
 ## How It Works
+
+### Event Mode
 
 The bot operates in three distinct phases:
 
@@ -86,15 +100,35 @@ The bot operates in three distinct phases:
 3. **Skip Phase:**
    * Processes skip operations for all targets
 
+### Baron Mode
+
+Baron Mode operates differently:
+
+1. **Attack-Only Phase:**
+   * Attacks each target without sending spies
+   * Uses a simplified attack sequence (preset → fill waves)
+   * Maintains a maximum of 18 simultaneous attacks
+   * When reaching 18 active attacks, waits for the next slot based on attack timing
+   * Continues until all targets have been attacked
+
+2. **Sleep Phase:**
+   * After attacking all targets, waits for 3 hours before starting the next cycle
+
 ## Image Files (`objects/` directory)
 
 This directory contains the template images used by PyAutoGUI to locate elements on the screen. Ensure these images match what appears in your game window for the bot to function correctly. You may need to recapture these images based on your screen resolution and game settings.
+
+## Future Work
+
+* **Baron Mode Attack Timing**: Further optimization and refinement of the attack scheduling system in Baron Mode is needed to ensure optimal performance in all scenarios.
+* **Dynamic Overlay Sizing**: Automatic adjustment of the target selection overlay based on game window size.
 
 ## Troubleshooting
 
 * **Image Recognition Issues**: If the bot fails to find buttons or interface elements, you might need to update the images in the `objects/` directory to match your game's appearance.
 * **OCR Problems**: Make sure Tesseract OCR is properly installed and configured. The bot will attempt to detect it automatically.
 * **Performance**: Close unnecessary applications to ensure the bot runs smoothly.
+* **Target Selection**: If the overlay doesn't align perfectly with your game window, adjust the width and height values in the Target Selection Overlay section.
 
 ## License
 

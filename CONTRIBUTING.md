@@ -13,11 +13,15 @@ The bot is organized as follows:
 
 ## Key Components
 
-1. **GUI Interface** - Built with Tkinter, manages target selection and bot control
-2. **Image Recognition** - Uses PyAutoGUI and OpenCV to find elements on screen
-3. **OCR Integration** - Uses Tesseract to read time values
-4. **Multi-Target Logic** - Manages sequential processing of multiple targets
-5. **Timing Management** - Tracks and stores timing values for each target
+1. **Mode Selection** - Allows switching between Event Mode and Baron Mode
+2. **GUI Interface** - Built with Tkinter, manages target selection and bot control
+3. **Target Selection Overlay** - Transparent overlay for clicking targets without affecting the game
+4. **Image Recognition** - Uses PyAutoGUI and OpenCV to find elements on screen
+5. **OCR Integration** - Uses Tesseract to read time values
+6. **Multi-Target Logic** - Manages processing of multiple targets based on selected mode
+7. **Attack Scheduling** - Smart scheduling of attacks in Baron Mode (maximum 18 simultaneous attacks)
+8. **Timing Management** - Tracks and stores timing values for each target
+9. **Progress Tracking** - Visual progress bar for monitoring completion status
 
 ## Development Setup
 
@@ -50,6 +54,12 @@ The bot is organized as follows:
 
 ## Extending the Bot
 
+### Priority Improvements
+
+1. **Baron Mode Attack Timing** - The attack scheduling system in Baron Mode needs further optimization to ensure optimal performance in all scenarios
+2. **Overlay Positioning** - Improve positioning and sizing of the target selection overlay
+3. **Dynamic Configuration** - Add more user-configurable settings
+
 ### Adding New Game Elements
 
 To add support for new game elements:
@@ -60,12 +70,27 @@ To add support for new game elements:
 
 ### Modifying Phase Logic
 
-If modifying the phase logic:
+#### Event Mode
+- The current flow: spy phase → attack phase → skip phase
+- Each phase processes all targets sequentially
 
-1. Understand the current flow: spy phase → attack phase → skip phase
-2. Each phase processes all targets sequentially
-3. Ensure proper waiting between operations
-4. Update time tracking and storage
+#### Baron Mode
+- Attack-only phase (no spy or skip phases)
+- Smart scheduling with maximum 18 simultaneous attacks
+- 3-hour sleep period between attack cycles
+
+When modifying either mode:
+1. Ensure proper waiting between operations
+2. Update time tracking and storage
+3. Maintain progress bar updates
+
+## Adding New Modes
+
+If adding a new operation mode:
+1. Add the mode to the mode selection dropdown
+2. Create a new mode-specific loop function
+3. Implement mode-specific UI and progress tracking
+4. Document the new mode in README.md
 
 ## License
 
