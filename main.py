@@ -16,18 +16,21 @@ class GoodgameEmpireBot:
     def __init__(self, root):
         self.root = root
         self.root.title("Goodgame Empire Bot")
-        self.root.geometry("300x200")
+        self.root.geometry("400x400")
         self.root.resizable(False, False)
 
         # Initialize attributes
         self.target_x = None
         self.target_y = None
+        self.targets = []  # List to store multiple targets
+        self.current_target_index = 0  # Track which target is being processed
         self.selecting_target = False
         self.running = False
         self.confidence_level = 0.8
         self.skip_confidence = 0.6  # Lower confidence for skip-related images
         self.max_retries = 5
         self.last_successful_time = 60  # Default fallback time
+        self.target_times = {}  # Dictionary to store travel times for each target
 
         # Tesseract configuration
         self.tesseract_path_var = tk.StringVar()
@@ -38,7 +41,7 @@ class GoodgameEmpireBot:
 
         # Status variables (not displayed but needed for functionality)
         self.status_var = tk.StringVar(value="Ready")
-        self.coord_var = tk.StringVar(value="Not selected")
+        self.coord_var = tk.StringVar(value="No targets selected")
         self.action_var = tk.StringVar(value="Idle")
 
         # Image folder path
@@ -128,15 +131,59 @@ class GoodgameEmpireBot:
             return False
 
     def create_ui(self):
-        """Create a simplified UI with just title and start button"""
+        """Create UI with target management and start button"""
+        # Main frame
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
         # Title
-        title_label = ttk.Label(self.root, text="Goodgame Empire Bot", font=("Arial", 16, "bold"))
-        title_label.pack(pady=(30, 20))
+        title_label = ttk.Label(main_frame, text="Goodgame Empire Bot", font=("Arial", 16, "bold"))
+        title_label.pack(pady=(10, 15))
+
+        # Target Management Frame
+        target_frame = ttk.LabelFrame(main_frame, text="Targets (Max 4)")
+        target_frame.pack(pady=10, padx=5, fill=tk.X)
+
+        # Target Listbox
+        self.target_listbox = tk.Listbox(target_frame, height=4)
+        self.target_listbox.pack(pady=5, padx=5, fill=tk.X)
+
+        # Target Buttons Frame
+        button_frame = ttk.Frame(target_frame)
+        button_frame.pack(fill=tk.X, pady=(0, 5))
+
+        self.add_target_button = ttk.Button(
+            button_frame,
+            text="Add Target",
+            command=self.add_target
+        )
+        self.add_target_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+
+        self.remove_target_button = ttk.Button(
+            button_frame,
+            text="Remove Selected",
+            command=self.remove_target
+        )
+        self.remove_target_button.pack(side=tk.RIGHT, padx=5, expand=True, fill=tk.X)
+
+        # Status Label
+        status_label = ttk.Label(main_frame, text="Status:")
+        status_label.pack(anchor=tk.W, padx=5)
+        
+        status_value = ttk.Label(main_frame, textvariable=self.status_var, wraplength=380)
+        status_value.pack(fill=tk.X, padx=5)
+
+        # Action Label
+        action_label = ttk.Label(main_frame, text="Action:")
+        action_label.pack(anchor=tk.W, padx=5)
+        
+        action_value = ttk.Label(main_frame, textvariable=self.action_var, wraplength=380)
+        action_value.pack(fill=tk.X, padx=5)
 
         # Start Button
         self.start_button = tk.Button(
-            self.root,
-            text="START BOT",
+            main_frame,
+            text="START LOOP",
             command=self.start_bot,
             bg="green",
             fg="white",
@@ -147,9 +194,9 @@ class GoodgameEmpireBot:
         self.start_button.pack(pady=10)
 
         # Help text
-        help_label = ttk.Label(self.root, text="Press ESC anytime to stop the bot", 
+        help_label = ttk.Label(main_frame, text="Press ESC anytime to stop the bot", 
                               font=("Arial", 9), foreground="gray")
-        help_label.pack(pady=(20, 0))
+        help_label.pack(pady=(5, 0))
 
     def update_confidence(self, event=None):
         """Update confidence level from slider"""
@@ -184,36 +231,75 @@ class GoodgameEmpireBot:
 
         return True
 
+    def add_target(self):
+        """Start the process of adding a target coordinate"""
+        if len(self.targets) >= 4:
+            messagebox.showwarning("Maximum Targets", "You can only add up to 4 targets.")
+            return
+            
+        if not self.running:
+            self.selecting_target = True
+            self.update_status("Click to set target location")
+            threading.Thread(target=self.select_target, daemon=True).start()
+        else:
+            messagebox.showwarning("Bot Running", "Cannot add targets while the bot is running.")
+
     def select_target(self):
         """Wait for the user to click the target location"""
-        self.update_status("Click to set target location")
-        self.selecting_target = True
-
         def on_click(x, y, button, pressed):
             if pressed and self.selecting_target:
-                self.target_x, self.target_y = x, y
+                # Store the new target
+                self.targets.append((x, y))
+                self.update_status(f"Added target at ({x}, {y})")
+                self.update_target_listbox()
                 self.selecting_target = False
-                self.update_target_coords()
                 return False  # Stop listener
 
         with mouse.Listener(on_click=on_click) as listener:
             listener.join()
 
-    def update_target_coords(self):
-        """Update the target coordinates and start the bot loop"""
-        self.coord_var.set(f"({self.target_x}, {self.target_y})")
-        self.update_status(f"Target set at ({self.target_x}, {self.target_y})")
+    def remove_target(self):
+        """Remove the selected target from the list"""
+        if self.running:
+            messagebox.showwarning("Bot Running", "Cannot remove targets while the bot is running.")
+            return
+            
+        selected = self.target_listbox.curselection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select a target to remove.")
+            return
+            
+        index = selected[0]
+        removed = self.targets.pop(index)
+        self.update_status(f"Removed target at ({removed[0]}, {removed[1]})")
+        self.update_target_listbox()
 
-        # Start the main bot loop in a separate thread
-        threading.Thread(target=self.run_bot_loop, daemon=True).start()
+    def update_target_listbox(self):
+        """Update the listbox with current targets"""
+        self.target_listbox.delete(0, tk.END)
+        for i, (x, y) in enumerate(self.targets):
+            self.target_listbox.insert(tk.END, f"Target {i+1}: ({x}, {y})")
+            
+        # Update the coordinate display
+        if self.targets:
+            self.coord_var.set(f"{len(self.targets)} target(s) selected")
+        else:
+            self.coord_var.set("No targets selected")
 
     def start_bot(self):
-        """Start the bot by initiating target selection"""
+        """Start the bot loop if targets are available"""
+        if not self.targets:
+            messagebox.showwarning("No Targets", "Please add at least one target first.")
+            return
+            
         if not self.running:
             self.running = True
+            self.current_target_index = 0  # Start with the first target
             self.start_button.config(state=tk.DISABLED, text="RUNNING...")
-            self.target_x, self.target_y = None, None
-            threading.Thread(target=self.select_target, daemon=True).start()
+            self.add_target_button.config(state=tk.DISABLED)
+            self.remove_target_button.config(state=tk.DISABLED)
+            self.update_status("Bot running")
+            threading.Thread(target=self.run_bot_loop, daemon=True).start()
 
     def stop_bot(self):
         """Stop the bot gracefully"""
@@ -222,7 +308,9 @@ class GoodgameEmpireBot:
             self.selecting_target = False
             self.update_status("Bot stopped")
             self.update_action("Idle")
-            self.start_button.config(state=tk.NORMAL, text="START BOT")
+            self.start_button.config(state=tk.NORMAL, text="START LOOP")
+            self.add_target_button.config(state=tk.NORMAL)
+            self.remove_target_button.config(state=tk.NORMAL)
 
     def find_and_click(self, image_name, click=True, region=None, confidence=None):
         """Find an image on screen and click it if requested"""
@@ -278,8 +366,9 @@ class GoodgameEmpireBot:
                 return location
 
             if click_target_on_fail and attempt < max_attempts - 1:
-                self.update_action(f"Clicking target again")
-                pyautogui.click(self.target_x, self.target_y)
+                self.update_action(f"Clicking target {self.current_target_index + 1} again")
+                target_x, target_y = self.targets[self.current_target_index]
+                pyautogui.click(target_x, target_y)
                 time.sleep(1)  # Wait a bit after clicking
 
         return None
@@ -578,7 +667,7 @@ class GoodgameEmpireBot:
         return used_any_skips
 
     def run_bot_loop(self):
-        """Main bot logic loop"""
+        """Main bot logic loop - batches similar operations across all targets"""
         self.update_status("Bot started")
         print("\n=== Bot Started ===")
 
@@ -586,151 +675,362 @@ class GoodgameEmpireBot:
             print("Warning: Tesseract OCR not configured. Using default time values.")
             self.update_status("WARNING: Tesseract OCR not configured. Using default time values.")
 
+        # Main loop - continue until bot is stopped
         while self.running:
-            try:
-                print("\n=== Starting New Cycle ===")
-                # Define all steps in sequence for better control
-                steps = [
-                    ('target_click', None),  # Special case for target click
-                    ('spy', 'spy'),
-                    ('confirm1', 'confirm1'),
-                    ('horse1', 'horse1'),
-                    ('read_time', None),  # Special case for reading time
-                    ('confirm2', 'confirm2'),
-                    ('wait_spy', None),  # Special case for waiting
-                    ('target_click2', None),  # Special case for second target click
-                    ('attack1', 'attack1'),
-                    ('confirm3', 'confirm3'),
-                    ('preset', 'preset'),
-                    ('remove', 'remove'),  # Will use topmost
-                    ('fillwaves', 'fillwaves'),
-                    ('attack2', 'attack2'),
-                    ('horse2', 'horse2'),
-                    ('read_attack_time', None),  # Special case for reading time
-                    ('confirm4', 'confirm4'),
-                    ('wait_attack', None),  # Special case for waiting
-                    ('target_click3', None),  # Special case for third target click
-                    ('attack1', 'attack1'),  # Added attack1 before skip
-                    ('skip', 'skip'),
-                    ('read_skip_time', None),  # Special case for reading time
-                    ('use_skips', None),  # Special case for skip handling
-                    ('close1', 'close1')
-                ]
+            if not self.targets:
+                self.update_status("No targets set. Please add targets.")
+                break
 
-                current_step = 0
-                while current_step < len(steps) and self.running:
-                    step_name, image_name = steps[current_step]
-                    self.update_status(f"Executing step: {step_name}")
-                    print(f"\nDebug: Executing step {current_step + 1}/{len(steps)}: {step_name}")
+            # Dictionary to track operation state for each target
+            target_states = {}
+            for i, coords in enumerate(self.targets):
+                target_key = f"target_{i}"
+                target_states[target_key] = {
+                    "coords": coords,
+                    "spy_time": None,
+                    "attack_time": None,
+                    "skip_time": None,
+                    "index": i,
+                    "spy_start_time": None  # Track when the spy was sent
+                }
+
+            # ====================== PHASE 1: SPY TARGETS ONE BY ONE, WAITING FOR EACH ======================
+            self.update_status("Phase 1: Sending spies and waiting for reports")
+            print("\n=== PHASE 1: SENDING SPIES AND WAITING FOR REPORTS ===")
+            
+            for target_key, state in target_states.items():
+                if not self.running:
+                    break
                     
-                    success = False
-                    attempts = 0
-                    max_attempts = 5
-
-                    while not success and attempts < max_attempts and self.running:
-                        try:
-                            if step_name.startswith('target_click'):
-                                # Handle target clicks
-                                self.update_action("Clicking target location")
-                                print(f"Debug: Clicking target at ({self.target_x}, {self.target_y})")
-                                pyautogui.click(self.target_x, self.target_y)
-                                time.sleep(1)
-                                success = True
+                i = state["index"]
+                target_x, target_y = state["coords"]
+                self.current_target_index = i
+                
+                self.update_status(f"Spying on Target {i+1}/{len(self.targets)}")
+                print(f"\n--- Spying on Target {i+1}: ({target_x}, {target_y}) ---")
+                
+                try:
+                    # Click target to start spy sequence
+                    self.update_action(f"Clicking target {i+1} for spy")
+                    pyautogui.click(target_x, target_y)
+                    time.sleep(1)
+                    
+                    # Execute spy sequence
+                    spy_steps = [
+                        ('spy', 'spy'),
+                        ('confirm1', 'confirm1'),
+                        ('horse1', 'horse1'),
+                        ('read_time', None),  # Read spy travel time
+                        ('confirm2', 'confirm2')
+                    ]
+                    
+                    success = self.execute_steps(spy_steps, i, target_x, target_y)
+                    if success and self.running:
+                        # Get the travel time that was set during the steps
+                        if f"{target_key}_spy" in self.target_times:
+                            spy_time = self.target_times[f"{target_key}_spy"]
+                            # Add 20 seconds buffer to the spy time as requested
+                            spy_time += 20
+                            state["spy_time"] = spy_time
+                            state["spy_start_time"] = time.time()  # Record when the spy was sent
+                            print(f"Debug: Target {i+1} spy time set to {spy_time}s (including +20s buffer)")
                             
-                            elif step_name == 'read_time':
-                                # Add delay after horse1 to ensure travel time window is visible
-                                print("Debug: Waiting for travel time window to appear")
-                                time.sleep(2)  # Wait longer for travel time window
-                                
-                                # Try to read time multiple times
-                                for attempt in range(3):
-                                    travel_time = self.read_time_ocr()
-                                    if travel_time:
-                                        travel_time += 2  # Add buffer
-                                        print(f"Debug: Successfully read travel time: {travel_time} seconds")
-                                        success = True
-                                        break
-                                    else:
-                                        print(f"Debug: Time read attempt {attempt+1}/3 failed, retrying...")
-                                        time.sleep(0.5)
-                                
-                                if not success:
-                                    # Fall back to default time if all attempts fail
-                                    travel_time = self.default_time_var.get()
-                                    print(f"Debug: Using default travel time: {travel_time} seconds")
-                                    success = True
-
-                            elif step_name == 'read_attack_time':
-                                # Handle time reading for attack
-                                attack_travel_time = self.read_time()
-                                if attack_travel_time:
-                                    attack_travel_time += 2  # Add buffer
-                                    success = True
-
-                            elif step_name == 'read_skip_time':
-                                # Handle time reading for skip
-                                skip_time = self.read_time()
-                                if skip_time:
-                                    success = True
-
-                            elif step_name == 'wait_spy':
-                                # Handle spy waiting
-                                if travel_time:
-                                    self.update_status(f"Waiting for spy travel: {travel_time} seconds")
-                                    time.sleep(travel_time)
-                                    success = True
-
-                            elif step_name == 'wait_attack':
-                                # Handle attack waiting
-                                if attack_travel_time:
-                                    self.update_status(f"Waiting for attack travel: {attack_travel_time} seconds")
-                                    time.sleep(attack_travel_time)
-                                    success = True
-
-                            elif step_name == 'use_skips':
-                                # Handle skip usage
-                                if skip_time:
-                                    success = self.navigate_skips(skip_time)
-
-                            elif step_name == 'remove':
-                                # Handle topmost remove button
-                                if self.find_topmost_with_retry('remove', max_attempts=3):
-                                    success = True
-
-                            else:
-                                # Handle normal image finding and clicking
-                                if self.find_with_retry(image_name, max_attempts=1):  # Only try once per attempt
-                                    success = True
-
-                        except Exception as e:
-                            print(f"Debug: Error in step {step_name} - {str(e)}")
-                            pass
-
-                        if not success:
-                            attempts += 1
-                            print(f"Debug: Step failed, attempt {attempts}/{max_attempts}")
-                            if attempts >= max_attempts:
-                                print(f"Debug: Maximum attempts reached, backtracking to previous step")
-                                if current_step > 0:
-                                    current_step -= 1
-                            else:
+                            # Wait for this spy to return before proceeding to the next target
+                            self.update_status(f"Waiting {spy_time}s for spy on Target {i+1} to return")
+                            print(f"\n--- Waiting {spy_time}s for spy report from Target {i+1} ---")
+                            
+                            # Wait with checks to allow stopping
+                            wait_start = time.time()
+                            while self.running and (time.time() - wait_start) < spy_time:
                                 time.sleep(1)
-
-                    if success:
-                        print(f"Debug: Step {step_name} completed successfully")
-                        current_step += 1
-                    elif not self.running:
-                        print("Debug: Bot stopped during step execution")
+                                remaining = spy_time - (time.time() - wait_start)
+                                if remaining > 0 and remaining % 10 < 1:  # Update roughly every 10 seconds
+                                    self.update_status(f"Waiting for spy from Target {i+1}: {int(remaining)}s remaining")
+                            
+                            if self.running:
+                                print(f"--- Spy report from Target {i+1} has arrived, ready for next target ---")
+                        else:
+                            # If we couldn't read the time, use default plus buffer
+                            default_time = self.default_time_var.get() + 20
+                            state["spy_time"] = default_time
+                            print(f"Debug: Target {i+1} using default spy time: {default_time}s (including +20s buffer)")
+                            
+                            # Wait using default time
+                            self.update_status(f"Waiting {default_time}s for spy on Target {i+1} to return (default)")
+                            print(f"\n--- Waiting {default_time}s for spy report from Target {i+1} (default) ---")
+                            
+                            # Wait with checks to allow stopping
+                            wait_start = time.time()
+                            while self.running and (time.time() - wait_start) < default_time:
+                                time.sleep(1)
+                                remaining = default_time - (time.time() - wait_start)
+                                if remaining > 0 and remaining % 10 < 1:  # Update roughly every 10 seconds
+                                    self.update_status(f"Waiting for spy from Target {i+1}: {int(remaining)}s remaining")
+                            
+                            if self.running:
+                                print(f"--- Spy report from Target {i+1} has arrived, ready for next target ---")
+                    
+                except Exception as e:
+                    print(f"Debug: Error in spy phase for Target {i+1} - {str(e)}")
+                    # Continue to next target rather than stopping completely
+            
+            # ====================== PHASE 2: ATTACK ALL TARGETS ======================
+            if self.running:
+                self.update_status("Phase 2: Attacking all targets")
+                print("\n=== PHASE 2: ATTACKING ALL TARGETS ===")
+                
+                for target_key, state in target_states.items():
+                    if not self.running:
                         break
+                        
+                    i = state["index"]
+                    target_x, target_y = state["coords"]
+                    self.current_target_index = i
+                    
+                    self.update_status(f"Attacking Target {i+1}/{len(self.targets)}")
+                    print(f"\n--- Attacking Target {i+1}: ({target_x}, {target_y}) ---")
+                    
+                    try:
+                        # Click target to start attack sequence
+                        self.update_action(f"Clicking target {i+1} for attack")
+                        pyautogui.click(target_x, target_y)
+                        time.sleep(1)
+                        
+                        # Execute attack sequence
+                        attack_steps = [
+                            ('attack1', 'attack1'),
+                            ('confirm3', 'confirm3'),
+                            ('preset', 'preset'),
+                            ('remove', 'remove'),  # Will use topmost
+                            ('fillwaves', 'fillwaves'),
+                            ('attack2', 'attack2'),
+                            ('horse2', 'horse2'),
+                            ('read_attack_time', None),  # Read attack travel time
+                            ('confirm4', 'confirm4')
+                        ]
+                        
+                        success = self.execute_steps(attack_steps, i, target_x, target_y)
+                        if success and self.running:
+                            # Get the travel time that was set during the steps
+                            if f"{target_key}_attack" in self.target_times:
+                                state["attack_time"] = self.target_times[f"{target_key}_attack"]
+                                print(f"Debug: Target {i+1} attack time set to {state['attack_time']}s")
+                        
+                        time.sleep(1)  # Short delay between targets
+                        
+                    except Exception as e:
+                        print(f"Debug: Error in attack phase for Target {i+1} - {str(e)}")
+                        # Continue to next target rather than stopping completely
+            
+            # ====================== WAIT FOR ATTACKS AND START SKIPS ======================
+            # Calculate the shortest attack time to know when to start skips
+            min_attack_time = float('inf')
+            for state in target_states.values():
+                if state["attack_time"] and state["attack_time"] < min_attack_time:
+                    min_attack_time = state["attack_time"]
+            
+            # If no valid attack times, use a default wait
+            if min_attack_time == float('inf'):
+                min_attack_time = self.default_time_var.get()
+            
+            # Wait for the shortest attack time
+            if self.running:
+                self.update_status(f"Waiting {min_attack_time}s for attacks to arrive")
+                print(f"\n=== Waiting {min_attack_time}s for attacks to arrive ===")
+                
+                # Wait, with checks to allow stopping
+                wait_start = time.time()
+                while self.running and (time.time() - wait_start) < min_attack_time:
+                    time.sleep(1)
+                    remaining = min_attack_time - (time.time() - wait_start)
+                    if remaining > 0 and remaining % 10 < 1:  # Update roughly every 10 seconds
+                        self.update_status(f"Waiting for attacks: {int(remaining)}s remaining")
+            
+            # ====================== PHASE 3: SKIP ALL TARGETS ======================
+            if self.running:
+                self.update_status("Phase 3: Processing skips for all targets")
+                print("\n=== PHASE 3: PROCESSING SKIPS FOR ALL TARGETS ===")
+                
+                for target_key, state in target_states.items():
+                    if not self.running:
+                        break
+                        
+                    i = state["index"]
+                    target_x, target_y = state["coords"]
+                    self.current_target_index = i
+                    
+                    self.update_status(f"Processing skips for Target {i+1}/{len(self.targets)}")
+                    print(f"\n--- Skip phase for Target {i+1}: ({target_x}, {target_y}) ---")
+                    
+                    try:
+                        # Click target to start skip sequence
+                        self.update_action(f"Clicking target {i+1} for skip")
+                        pyautogui.click(target_x, target_y)
+                        time.sleep(1)
+                        
+                        # Execute skip sequence
+                        skip_steps = [
+                            ('attack1', 'attack1'),  # First need to start attack again
+                            ('skip', 'skip'),
+                            ('read_skip_time', None),  # Read remaining skip time
+                            ('use_skips', None),  # Use skip items
+                            ('close1', 'close1')
+                        ]
+                        
+                        success = self.execute_steps(skip_steps, i, target_x, target_y)
+                        if success and self.running:
+                            # Get the skip time that was set during the steps (for future reference)
+                            if f"{target_key}_skip" in self.target_times:
+                                state["skip_time"] = self.target_times[f"{target_key}_skip"]
+                                print(f"Debug: Target {i+1} skip time was {state['skip_time']}s")
+                        
+                        time.sleep(1)  # Short delay between targets
+                        
+                    except Exception as e:
+                        print(f"Debug: Error in skip phase for Target {i+1} - {str(e)}")
+                        # Continue to next target rather than stopping completely
+            
+            # Cycle complete
+            if self.running:
+                self.update_status("Completed full cycle through all targets")
+                print("\n=== COMPLETED FULL CYCLE THROUGH ALL TARGETS ===")
+                time.sleep(5)  # Wait a bit before starting the next cycle
+            else:
+                print("\n=== Bot cycle stopped ===")
+        
+        # Reset the UI when the bot stops
+        self.stop_bot()
 
-                if current_step >= len(steps):
-                    print("\nDebug: Completed full cycle, starting again")
-                    self.update_status("Completed full cycle, starting again")
+    def execute_steps(self, steps, target_index, target_x, target_y):
+        """Execute a sequence of steps for a target and return success/failure"""
+        target_key = f"target_{target_index}"
+        
+        for step_idx, (step_name, image_name) in enumerate(steps):
+            if not self.running:
+                return False
+                
+            self.update_status(f"Target {target_index+1}: Step {step_name}")
+            print(f"Debug: Target {target_index+1} - Step {step_idx+1}/{len(steps)}: {step_name}")
+            
+            success = False
+            attempts = 0
+            max_attempts = 4  # Lower than default to avoid long waits
+            
+            while not success and attempts < max_attempts and self.running:
+                try:
+                    if step_name == 'read_time':
+                        # Read spy travel time
+                        time.sleep(2)  # Wait for travel time window
+                        travel_time = self.read_time()  # This calls read_time_ocr internally
+                        
+                        if travel_time:
+                            print(f"Debug: Target {target_index+1} - Read spy time: {travel_time}s")
+                            # Store this time for future reference
+                            self.target_times[f"{target_key}_spy"] = travel_time
+                            success = True
+                        else:
+                            # Try to use a previously recorded time for this target
+                            if f"{target_key}_spy" in self.target_times:
+                                travel_time = self.target_times[f"{target_key}_spy"]
+                                print(f"Debug: Target {target_index+1} - Using stored spy time: {travel_time}s")
+                            else:
+                                travel_time = self.default_time_var.get()
+                                print(f"Debug: Target {target_index+1} - Using default spy time: {travel_time}s")
+                            success = True
 
-            except Exception as e:
-                print(f"\nDebug: Error in main loop - {str(e)}")
-                if self.running:
-                    time.sleep(5)
+                    elif step_name == 'read_attack_time':
+                        # Read attack travel time
+                        attack_travel_time = self.read_time()  # This calls read_time_ocr internally
+                        
+                        if attack_travel_time:
+                            print(f"Debug: Target {target_index+1} - Read attack time: {attack_travel_time}s")
+                            # Store this time for future reference
+                            self.target_times[f"{target_key}_attack"] = attack_travel_time
+                            success = True
+                        else:
+                            # Try to use a previously recorded time for this target
+                            if f"{target_key}_attack" in self.target_times:
+                                attack_travel_time = self.target_times[f"{target_key}_attack"]
+                                print(f"Debug: Target {target_index+1} - Using stored attack time: {attack_travel_time}s")
+                            else:
+                                attack_travel_time = self.default_time_var.get()
+                                print(f"Debug: Target {target_index+1} - Using default attack time: {attack_travel_time}s")
+                            success = True
+
+                    elif step_name == 'read_skip_time':
+                        # Read skip time
+                        skip_time = self.read_time()  # This calls read_time_ocr internally
+                        
+                        if skip_time:
+                            print(f"Debug: Target {target_index+1} - Read skip time: {skip_time}s")
+                            # Store this time for future reference
+                            self.target_times[f"{target_key}_skip"] = skip_time
+                            success = True
+                        else:
+                            # Try to use a previously recorded time for this target
+                            if f"{target_key}_skip" in self.target_times:
+                                skip_time = self.target_times[f"{target_key}_skip"]
+                                print(f"Debug: Target {target_index+1} - Using stored skip time: {skip_time}s")
+                            else:
+                                skip_time = self.default_time_var.get()
+                                print(f"Debug: Target {target_index+1} - Using default skip time: {skip_time}s")
+                            success = True
+
+                    elif step_name == 'use_skips':
+                        # Handle skip usage
+                        if f"{target_key}_skip" in self.target_times:
+                            skip_time = self.target_times[f"{target_key}_skip"]
+                            self.update_status(f"Target {target_index+1}: Using skips for {skip_time}s")
+                            success = self.navigate_skips(skip_time)
+                        else:
+                            # No skip time available, try to read it now
+                            skip_time = self.read_time()
+                            if skip_time:
+                                self.update_status(f"Target {target_index+1}: Using skips for {skip_time}s")
+                                success = self.navigate_skips(skip_time)
+                            else:
+                                # Can't determine skip time, use default
+                                skip_time = self.default_time_var.get()
+                                self.update_status(f"Target {target_index+1}: Using skips with default time {skip_time}s")
+                                success = self.navigate_skips(skip_time)
+
+                    elif step_name == 'remove':
+                        # Handle topmost remove button
+                        if self.find_topmost_with_retry('remove', max_attempts=3):
+                            success = True
+                        else:
+                            # If can't find remove button, assume we need to continue anyway
+                            print(f"Debug: Target {target_index+1} - Could not find remove button, continuing")
+                            success = True
+                            
+                    else:
+                        # Handle normal image finding and clicking
+                        if self.find_with_retry(image_name, max_attempts=2):  # Reduced attempts per step
+                            success = True
+                        
+                except Exception as e:
+                    print(f"Debug: Target {target_index+1} - Error in step {step_name} - {str(e)}")
+                    # Continue with attempts
+                
+                if not success:
+                    attempts += 1
+                    print(f"Debug: Target {target_index+1} - Step {step_name} failed, attempt {attempts}/{max_attempts}")
+                    
+                    if attempts >= max_attempts:
+                        # If we've tried enough times, move to the next step
+                        print(f"Debug: Target {target_index+1} - Max attempts reached for {step_name}, skipping to next step")
+                        success = True  # Force success to move on
+                    else:
+                        # Try clicking the target again before next attempt
+                        pyautogui.click(target_x, target_y)
+                        time.sleep(1)
+            
+            # If a step failed and we didn't force success, or the bot was stopped
+            if not success or not self.running:
+                return False
+                
+        # All steps completed
+        return True
 
     def find_topmost_and_click(self, image_name, click=True, confidence=None):
         """Find the topmost instance of an image on screen and click it if requested"""
@@ -782,8 +1082,9 @@ class GoodgameEmpireBot:
                 return location
 
             if click_target_on_fail and attempt < max_attempts - 1:
-                self.update_action(f"Clicking target again")
-                pyautogui.click(self.target_x, self.target_y)
+                self.update_action(f"Clicking target {self.current_target_index + 1} again")
+                target_x, target_y = self.targets[self.current_target_index]
+                pyautogui.click(target_x, target_y)
                 time.sleep(1)  # Wait a bit after clicking
 
         return None
