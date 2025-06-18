@@ -1,5 +1,9 @@
 # Goodgame Empire Bot
 
+⚠️ Project Status: This project is currently unmaintained and no longer fully functional. The bot interface does not load as expected. I’m currently focused on academic commitments and won't be updating this repo in the near future.
+
+Feel free to fork, debug, or improve it — contributions are welcome.
+
 This is a Python bot designed to automate certain tasks in the game Goodgame Empire using image recognition and GUI automation.
 
 ## Features
